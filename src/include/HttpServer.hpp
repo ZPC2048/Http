@@ -164,6 +164,7 @@ public:
   
   ~Socket() {
     if (useable) {
+      shutdown(socketFd, SHUT_RDWR);
       close(socketFd);
     }
   }
@@ -212,7 +213,7 @@ public:
     return true;
   }
 
-  int addEvent(int eventFd, uint32_t events = EPOLLIN) {
+  int addEvent(int eventFd, uint32_t events = EPOLLIN | EPOLLET) {
     epoll_event event;
     event.data.fd = eventFd;
     event.events = events;
@@ -261,7 +262,7 @@ public:
   HttpServer() = default;
 
   void init(size_t threadPoolSize, size_t maxEpollSize) {
-    maxQueueSize = 20;
+    maxQueueSize = 1000;
     threadPool.init(threadPoolSize);
     epoll.init(maxEpollSize);
   }
@@ -275,9 +276,8 @@ public:
     listenSocket.bind(host, port);
     listenSocket.listen(maxQueueSize);
 
-    epoll.addEvent(listenSocket.getSocket(), EPOLLIN);
+    epoll.addEvent(listenSocket.getSocket());
 
-    std::unordered_map<socket_t, std::unique_ptr<Socket>> clientSockets;
 
     while (true) {
       int eventNumber = epoll.wait(20, -1);
@@ -290,13 +290,17 @@ public:
       for (int i = 0; i < eventNumber; ++i) {
         if (epoll.getEventFd(i) == listenSocket.getSocket() && (epoll.getEvents(i) & EPOLLIN)) {
           socket_t clientSocketFd = accept(listenSocket.getSocket(), nullptr, nullptr);
+          {
+          std::unique_lock<std::mutex> temp(tempMutex);
           clientSockets[clientSocketFd] = std::make_unique<Socket>(clientSocketFd);
+          }
           if (clientSocketFd < 0) {
             continue;
           }
-          epoll.addEvent(clientSocketFd, EPOLLIN);
+          epoll.addEvent(clientSocketFd);
         } else if (epoll.getEvents(i) & EPOLLIN) {
           socket_t clientSocketFd = epoll.getEventFd(i);
+          // epoll.removeEvent(clientSocketFd);
           threadPool.submitTask(processClient, clientSocketFd, std::ref(*this), std::ref(epoll));
         }
       }
@@ -308,6 +312,9 @@ private:
   ThreadPool threadPool;
   size_t maxQueueSize;
   Handlers getHandlers;
+
+  std::mutex tempMutex;
+  std::unordered_map<socket_t, std::unique_ptr<Socket>> clientSockets;
 
   static void parseRequestLine(const char* s, size_t len, Request& request) {
     static const std::vector<std::string> totalMethod = {"GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS", "TRACE", "PATCH"};
@@ -455,7 +462,11 @@ private:
     //     printf("has sent %d data\n", offset);
     //   }
     // }
-    epoll.addEvent(clientSocketFd);
+    // printf("thread ID: %d clientScoketFd: %d\n", gettid(), clientSocketFd);
+    // epoll.addEvent(clientSocketFd);
+    std::unique_lock<std::mutex> temp(server.tempMutex);
+    server.clientSockets.erase(clientSocketFd);
+    // shutdown(clientSocketFd, SHUT_RDWR);
   }
 };
 

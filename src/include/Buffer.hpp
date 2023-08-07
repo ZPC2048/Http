@@ -76,6 +76,7 @@ protected:
 
   int readFd() {
     int readNumber = read(fd, buffer + writePos, size - writePos);
+    // printf("readNumber: %d; errno: %d\n", readNumber, errno);
     if (readNumber > 0) {
       writePos += readNumber;
       if (writePos >= size) {
