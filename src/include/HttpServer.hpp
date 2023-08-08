@@ -414,7 +414,7 @@ private:
 
   static void processClient(socket_t clientSocketFd, HttpServer& server, Epoll& epoll) {
     // printf("clientSocket: %d\n", clientSocketFd);
-    Buffer buffer(clientSocketFd, 65536);
+    Buffer buffer(clientSocketFd);
     Request request;
     Response response;
     auto line = buffer.readline();
@@ -438,32 +438,17 @@ private:
     line = buffer.readline();
     route(request, response, server);
     
-    char tmp[2048];
-    int charNumber = sprintf(tmp, "%s %s %s\r\n", getHttpVersionString(response.version), 
-                             response.statusCode.c_str(), response.statusDescription.c_str());
-    write(clientSocketFd, tmp, charNumber);
+    buffer.writeFd("%s %s %s\r\n", getHttpVersionString(response.version), response.statusCode.c_str(), response.statusDescription.c_str());
 
     for (auto& header : response.headers) {
-      charNumber = sprintf(tmp, "%s: %s\r\n", header.first.c_str(), header.second.c_str());
-      write(clientSocketFd, tmp, charNumber);
+      buffer.writeFd("%s: %s\r\n", header.first.c_str(), header.second.c_str());
     }
-    write(clientSocketFd, "\r\n", 2);
+    buffer.writeFd("\r\n");
 
-    write(clientSocketFd, response.body.c_str(), response.body.size());
+    buffer.writeFd("%s", response.body.c_str());
 
-    // while (true) {
-    //   char buff[4096];
-    //   read(clientSocketFd, buff, sizeof(buff));
-    //   printf("%s\n", buff);
-    //   const char ret[] = "HTTP/1.1 501 Method Not Implemeted\r\nServer: jdbhttpd/0.1.0\r\nContent-Type: text/html\r\n\r\nMethod Not Implemeted\r\n";
-    //   int offset = 0;
-    //   while (offset < sizeof(ret)) {
-    //     offset += send(clientSocketFd, ret + offset, sizeof(ret) - offset, 0);
-    //     printf("has sent %d data\n", offset);
-    //   }
-    // }
-    // printf("thread ID: %d clientScoketFd: %d\n", gettid(), clientSocketFd);
-    // epoll.addEvent(clientSocketFd);
+    buffer.flushWrite();
+
     std::unique_lock<std::mutex> temp(server.tempMutex);
     server.clientSockets.erase(clientSocketFd);
     // shutdown(clientSocketFd, SHUT_RDWR);
