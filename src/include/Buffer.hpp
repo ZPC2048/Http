@@ -13,13 +13,18 @@ namespace Http {
 
 class Buffer {
 public:
-  explicit Buffer(int fd, size_t maxBufferSize) :
-    fd(fd), size(maxBufferSize), buffer(new char[size]), readPos(0), writePos(0) {
+  explicit Buffer(int fd) :
+    fd(fd), readBufferSize(INIT_BUFFER_SIZE), writeBufferSize(INIT_BUFFER_SIZE), 
+    readBuffer(new char[INIT_BUFFER_SIZE]), writeBuffer(new char[INIT_BUFFER_SIZE]), 
+    readBufferReadPos(0), readBufferWritePos(0), writeBufferWritePos(0) {
   }
 
   ~Buffer() {
-    if (buffer != nullptr) {
-      delete[] buffer;
+    if (readBuffer != nullptr) {
+      delete[] readBuffer;
+    }
+    if (writeBuffer != nullptr) {
+      delete[] writeBuffer;
     }
   }
 
@@ -29,15 +34,15 @@ public:
    *         or nullptr and errno if error occurred.
    */
   std::pair<const char*, size_t> readline() {
-    curPos = readPos;
+    readBufferCurPos = readBufferReadPos;
     while (true) {
-      while (curPos < writePos) {
-        if (buffer[curPos] == '\n' && curPos - 1 >= readPos && buffer[curPos - 1] == '\r') {
-          auto oldReadPos = readPos;
-          readPos = curPos + 1;
-          return std::make_pair<const char*, size_t>(buffer + oldReadPos, curPos - oldReadPos + 1);
+      while (readBufferCurPos < readBufferWritePos) {
+        if (readBuffer[readBufferCurPos] == '\n' && readBufferCurPos - 1 >= readBufferReadPos && readBuffer[readBufferCurPos - 1] == '\r') {
+          auto oldReadPos = readBufferReadPos;
+          readBufferReadPos = readBufferCurPos + 1;
+          return std::make_pair<const char*, size_t>(readBuffer + oldReadPos, readBufferCurPos - oldReadPos + 1);
         }
-        ++curPos;
+        ++readBufferCurPos;
       }
       int readNumber = readFd();
       if (readNumber < 0) {
@@ -50,49 +55,103 @@ public:
     return std::make_pair(nullptr, EOF);
   }
 
-protected:
-  void resize(size_t newBufferSize) {
-    char* tmp = buffer;
-    buffer = new char[newBufferSize];
-    memcpy(buffer, tmp + readPos, writePos - readPos);
-    size = newBufferSize;
-    writePos -= readPos;
-    curPos -= readPos;
-    readPos = 0;
-    delete tmp;
+  template<typename... Args>
+  void writeFd(const char* format, Args&&... args){
+    int writeNumber = snprintf(writeBuffer + writeBufferWritePos, writeBufferSize - writeBufferWritePos, 
+                               format, std::forward<Args>(args)...);
+    if (writeNumber < writeBufferSize - writeBufferWritePos) {
+      writeBufferWritePos += writeNumber;
+      return;
+    }
+    flushWrite();
+    do {
+      overflowWriteBuffer();
+      writeNumber = snprintf(writeBuffer + writeBufferWritePos, writeBufferSize - writeBufferWritePos, 
+                             format, std::forward<Args>(args)...);
+    } while (writeNumber >= writeBufferSize - writeBufferWritePos);
+    writeBufferWritePos += writeNumber;
   }
 
-  bool overflow() {
-    if (writePos - readPos > size * 0.75) {
-      resize(size << 1);
+  void writeFd(const char* content){
+    writeFd("%s", content);
+  }
+
+  void flushWrite() {
+    size_t cur = 0;
+    while (cur < writeBufferWritePos) {
+      int writeNumber = write(fd, writeBuffer + cur, writeBufferWritePos - cur);
+      if (writeNumber < 0) {
+        continue;
+      }
+      if (writeNumber == 0) {
+        writeBufferWritePos = 0;
+        return;
+      }
+      if (writeNumber > 0) {
+        cur += writeNumber;
+      }
+    }
+    writeBufferWritePos = 0;
+  }
+
+protected:
+  void resizeReadBuffer(size_t newBufferSize) {
+    char* tmp = readBuffer;
+    readBuffer = new char[newBufferSize];
+    memcpy(readBuffer, tmp + readBufferReadPos, readBufferWritePos - readBufferReadPos);
+    readBufferSize = newBufferSize;
+    readBufferWritePos -= readBufferReadPos;
+    readBufferCurPos -= readBufferReadPos;
+    readBufferReadPos = 0;
+    delete[] tmp;
+  }
+
+  bool overflowReadBuffer() {
+    if (readBufferWritePos - readBufferReadPos > readBufferSize * 0.75) {
+      resizeReadBuffer(readBufferSize << 1);
       return true;
     }
-    memmove(buffer, buffer + readPos, writePos - readPos);
-    writePos -= readPos;
-    curPos -= readPos;
-    readPos = 0;
+    memmove(readBuffer, readBuffer + readBufferReadPos, readBufferWritePos - readBufferReadPos);
+    readBufferWritePos -= readBufferReadPos;
+    readBufferCurPos -= readBufferReadPos;
+    readBufferReadPos = 0;
     return false;
   }
 
+  void overflowWriteBuffer() {
+    char* tmp = writeBuffer;
+    writeBuffer = new char[writeBufferSize << 1];
+    memcpy(writeBuffer, tmp, writeBufferWritePos);
+    writeBufferSize <<= 1;
+    delete[] tmp;
+  }
+
   int readFd() {
-    int readNumber = read(fd, buffer + writePos, size - writePos);
+    int readNumber = read(fd, readBuffer + readBufferWritePos, readBufferSize - readBufferWritePos);
     // printf("readNumber: %d; errno: %d\n", readNumber, errno);
     if (readNumber > 0) {
-      writePos += readNumber;
-      if (writePos >= size) {
-        overflow();
+      readBufferWritePos += readNumber;
+      if (readBufferWritePos >= readBufferSize) {
+        overflowReadBuffer();
       }
     }
     return readNumber;
   }
 
 private:
+  const static size_t INIT_BUFFER_SIZE = 4096;
+
   int fd;
-  size_t readPos;
-  size_t writePos;
-  size_t curPos;
-  size_t size;
-  char* buffer;
+
+  size_t readBufferReadPos;
+  size_t readBufferWritePos;
+  size_t readBufferCurPos;
+  size_t readBufferSize;
+  char* readBuffer;
+
+  size_t writeBufferWritePos;
+  size_t writeBufferSize;
+  char* writeBuffer;
 };
 
 }

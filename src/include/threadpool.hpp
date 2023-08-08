@@ -14,8 +14,9 @@ public:
   explicit ThreadPool() {
   }
 
-  explicit ThreadPool(const size_t threadPoolSize, bool detach) :
-    threadPoolPtr(std::make_shared<ThreadPoolPtr>(threadPoolSize, false, detach)) {
+  explicit ThreadPool(const size_t threadPoolSize, bool detach) {
+    if (threadPoolPtr) return;
+    threadPoolPtr = std::make_shared<ThreadPoolPtr>(threadPoolSize, false, detach);
     for (size_t i = 0; i < threadPoolSize; ++i) {
       threadPoolPtr->threads[i] = std::move(std::thread(ThreadWorker(i, threadPoolPtr)));
       if (threadPoolPtr->detach) {

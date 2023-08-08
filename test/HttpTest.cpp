@@ -5,9 +5,9 @@ using namespace Http;
 int main() {
   HttpServer httpServer;
   int requestCount = 0;
-  httpServer.init(20, 100);
+  httpServer.init(10, 100);
   httpServer.get("/help", [](const Request& request, Response& response) {
-    response.version = request.version;
+    response.version = HttpVersion::HTTP1_0;
     response.statusCode = "200";
     response.statusDescription = "OK";
     response.headers.emplace("Content-Type", "text/html");
@@ -16,7 +16,7 @@ int main() {
   });
   httpServer.get("/test", [&requestCount](const Request& request, Response& response) {
     ++requestCount;
-    response.version = request.version;
+    response.version = HttpVersion::HTTP1_0;
     response.statusCode = "200";
     response.statusDescription = "OK";
     response.headers.emplace("Content-Type", "text/html");
