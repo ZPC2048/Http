@@ -4,3 +4,4 @@ build/
 test/webbench-1.5/webbench
 test/webbench-1.5/webbench.1
 test/webbench-1.5/webbench.o
+workflow.txt

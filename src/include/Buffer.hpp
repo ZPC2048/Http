@@ -1,5 +1,5 @@
-#ifndef BUFFER_2048
-#define BUFFER_2048
+#ifndef BUFFER_H_2048
+#define BUFFER_H_2048
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -56,7 +56,7 @@ public:
   }
 
   template<typename... Args>
-  void writeFd(const char* format, Args&&... args){
+  void bufferedWriteFd(const char* format, Args&&... args){
     int writeNumber = snprintf(writeBuffer + writeBufferWritePos, writeBufferSize - writeBufferWritePos, 
                                format, std::forward<Args>(args)...);
     if (writeNumber < writeBufferSize - writeBufferWritePos) {
@@ -72,8 +72,23 @@ public:
     writeBufferWritePos += writeNumber;
   }
 
-  void writeFd(const char* content){
-    writeFd("%s", content);
+  void bufferedWriteFd(const char* content){
+    bufferedWriteFd("%s", content);
+  }
+
+  inline bool writeFd(const char* content, size_t size) {
+    size_t cur = 0;
+    while (cur < size) {
+      int writeNumber = write(fd, content + cur, size - cur);
+      if (writeNumber < 0) {
+        continue;
+      }
+      if (writeNumber == 0) {
+        return true;
+      }
+      cur += writeNumber;
+    }
+    return true;
   }
 
   void flushWrite() {
@@ -87,9 +102,7 @@ public:
         writeBufferWritePos = 0;
         return;
       }
-      if (writeNumber > 0) {
-        cur += writeNumber;
-      }
+      cur += writeNumber;
     }
     writeBufferWritePos = 0;
   }
