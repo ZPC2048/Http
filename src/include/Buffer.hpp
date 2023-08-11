@@ -56,12 +56,12 @@ public:
   }
 
   template<typename... Args>
-  void bufferedWriteFd(const char* format, Args&&... args){
+  int bufferedWriteFd(const char* format, Args&&... args){
     int writeNumber = snprintf(writeBuffer + writeBufferWritePos, writeBufferSize - writeBufferWritePos, 
                                format, std::forward<Args>(args)...);
     if (writeNumber < writeBufferSize - writeBufferWritePos) {
       writeBufferWritePos += writeNumber;
-      return;
+      return writeNumber;
     }
     flushWrite();
     do {
@@ -70,10 +70,11 @@ public:
                              format, std::forward<Args>(args)...);
     } while (writeNumber >= writeBufferSize - writeBufferWritePos);
     writeBufferWritePos += writeNumber;
+    return writeNumber;
   }
 
-  void bufferedWriteFd(const char* content){
-    bufferedWriteFd("%s", content);
+  int bufferedWriteFd(const char* content){
+    return bufferedWriteFd("%s", content);
   }
 
   inline bool writeFd(const char* content, size_t size) {
@@ -105,6 +106,10 @@ public:
       cur += writeNumber;
     }
     writeBufferWritePos = 0;
+  }
+
+  void clear() {
+    readBufferReadPos = readBufferWritePos = readBufferCurPos = writeBufferWritePos = 0;
   }
 
 protected:
@@ -141,7 +146,6 @@ protected:
 
   int readFd() {
     int readNumber = read(fd, readBuffer + readBufferWritePos, readBufferSize - readBufferWritePos);
-    // printf("readNumber: %d; errno: %d\n", readNumber, errno);
     if (readNumber > 0) {
       readBufferWritePos += readNumber;
       if (readBufferWritePos >= readBufferSize) {
