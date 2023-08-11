@@ -17,10 +17,10 @@ int main() {
   // return 0;
   int requestCount = 0;
   httpServer.init(10, 100);
+  httpServer.setBaseDir("./build/resources", "/static");
   httpServer.get("/help", [](const Request& request, Response& response) {
     response.version = request.version;
-    response.statusCode = "200";
-    response.statusDescription = "OK";
+    response.statusCode = 200;
     response.headers.emplace("Content-Type", "text/html");
     response.body = "response help";
     response.headers.emplace("Content-Length", std::to_string(response.body.length()));
@@ -28,8 +28,7 @@ int main() {
   httpServer.get("/test", [&requestCount](const Request& request, Response& response) {
     ++requestCount;
     response.version = request.version;
-    response.statusCode = "200";
-    response.statusDescription = "OK";
+    response.statusCode = 200;
     response.headers.emplace("Content-Type", "text/html");
     response.body = "response test" + std::to_string(requestCount);
     response.headers.emplace("Content-Length", std::to_string(response.body.length()));
