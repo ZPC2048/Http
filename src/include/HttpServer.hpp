@@ -27,7 +27,7 @@
 
 namespace Http {
 
-using Headers = std::unordered_multimap<std::string, std::string>;
+using Headers = std::unordered_map<std::string, std::string>;
 using QueryStrings = std::unordered_map<std::string, std::string>;
 using ContentProvider = std::function<bool(Buffer&)>;
 
@@ -71,22 +71,106 @@ const char* getHttpVersionString(HttpVersion httpVersion) {
   return nullptr;
 }
 
+const char* getStatusMessage(int statusCode) {
+  switch (statusCode) {
+  case 100: return "Continue";
+  case 101: return "Switching Protocol";
+  case 102: return "Processing";
+  case 103: return "Early Hints";
+  case 200: return "OK";
+  case 201: return "Created";
+  case 202: return "Accepted";
+  case 203: return "Non-Authoritative Information";
+  case 204: return "No Content";
+  case 205: return "Reset Content";
+  case 206: return "Partial Content";
+  case 207: return "Multi-Status";
+  case 208: return "Already Reported";
+  case 226: return "IM Used";
+  case 300: return "Multiple Choice";
+  case 301: return "Moved Permanently";
+  case 302: return "Found";
+  case 303: return "See Other";
+  case 304: return "Not Modified";
+  case 305: return "Use Proxy";
+  case 306: return "unused";
+  case 307: return "Temporary Redirect";
+  case 308: return "Permanent Redirect";
+  case 400: return "Bad Request";
+  case 401: return "Unauthorized";
+  case 402: return "Payment Required";
+  case 403: return "Forbidden";
+  case 404: return "Not Found";
+  case 405: return "Method Not Allowed";
+  case 406: return "Not Acceptable";
+  case 407: return "Proxy Authentication Required";
+  case 408: return "Request Timeout";
+  case 409: return "Conflict";
+  case 410: return "Gone";
+  case 411: return "Length Required";
+  case 412: return "Precondition Failed";
+  case 413: return "Payload Too Large";
+  case 414: return "URI Too Long";
+  case 415: return "Unsupported Media Type";
+  case 416: return "Range Not Satisfiable";
+  case 417: return "Expectation Failed";
+  case 418: return "I'm a teapot";
+  case 421: return "Misdirected Request";
+  case 422: return "Unprocessable Entity";
+  case 423: return "Locked";
+  case 424: return "Failed Dependency";
+  case 425: return "Too Early";
+  case 426: return "Upgrade Required";
+  case 428: return "Precondition Required";
+  case 429: return "Too Many Requests";
+  case 431: return "Request Header Fields Too Large";
+  case 451: return "Unavailable For Legal Reasons";
+  case 501: return "Not Implemented";
+  case 502: return "Bad Gateway";
+  case 503: return "Service Unavailable";
+  case 504: return "Gateway Timeout";
+  case 505: return "HTTP Version Not Supported";
+  case 506: return "Variant Also Negotiates";
+  case 507: return "Insufficient Storage";
+  case 508: return "Loop Detected";
+  case 510: return "Not Extended";
+  case 511: return "Network Authentication Required";
+
+  default:
+  case 500: return "Internal Server Error";
+  }
+}
+
 struct Request {
   RequestMethod method;
   std::string url;
   QueryStrings queryStrings;
   HttpVersion version;
   Headers headers;
+  bool keepAlive = false;
 
   std::smatch match;
+
+  inline bool isKeyInHeader(const std::string& key) {
+    return headers.find(key) != headers.end();
+  }
+
+  inline const std::string& getHeaderValue(const std::string& key) {
+    auto iter = headers.find(key);
+    if (iter == headers.end()) {
+      throw std::runtime_error("passed key not in header");
+    }
+    return iter->second;
+  }
 };
 
 struct Response {
-  HttpVersion version;
-  std::string statusCode;
-  std::string statusDescription;
+  HttpVersion version = HttpVersion::HTTP1_1;
+  int statusCode = -1;
 
   Headers headers;
+  bool keepAlive = false;
+
   std::string body;
   ContentProvider contentProvider;
 };
@@ -134,58 +218,6 @@ public:
     baseDirs.push_back(std::make_pair(mountDir, url));
   }
 
-  /*
-  case "css"_t: return "text/css";
-  case "csv"_t: return "text/csv";
-  case "htm"_t:
-  case "html"_t: return "text/html";
-  case "js"_t:
-  case "mjs"_t: return "text/javascript";
-  case "txt"_t: return "text/plain";
-  case "vtt"_t: return "text/vtt";
-
-  case "apng"_t: return "image/apng";
-  case "avif"_t: return "image/avif";
-  case "bmp"_t: return "image/bmp";
-  case "gif"_t: return "image/gif";
-  case "png"_t: return "image/png";
-  case "svg"_t: return "image/svg+xml";
-  case "webp"_t: return "image/webp";
-  case "ico"_t: return "image/x-icon";
-  case "tif"_t: return "image/tiff";
-  case "tiff"_t: return "image/tiff";
-  case "jpg"_t:
-  case "jpeg"_t: return "image/jpeg";
-
-  case "mp4"_t: return "video/mp4";
-  case "mpeg"_t: return "video/mpeg";
-  case "webm"_t: return "video/webm";
-
-  case "mp3"_t: return "audio/mp3";
-  case "mpga"_t: return "audio/mpeg";
-  case "weba"_t: return "audio/webm";
-  case "wav"_t: return "audio/wave";
-
-  case "otf"_t: return "font/otf";
-  case "ttf"_t: return "font/ttf";
-  case "woff"_t: return "font/woff";
-  case "woff2"_t: return "font/woff2";
-
-  case "7z"_t: return "application/x-7z-compressed";
-  case "atom"_t: return "application/atom+xml";
-  case "pdf"_t: return "application/pdf";
-  case "json"_t: return "application/json";
-  case "rss"_t: return "application/rss+xml";
-  case "tar"_t: return "application/x-tar";
-  case "xht"_t:
-  case "xhtml"_t: return "application/xhtml+xml";
-  case "xslt"_t: return "application/xslt+xml";
-  case "xml"_t: return "application/xml";
-  case "gz"_t: return "application/gzip";
-  case "zip"_t: return "application/zip";
-  case "wasm"_t: return "application/wasm";
-  */
-
   void listen(const std::string& host, u_short port) {
     Socket listenSocket;
     listenSocket.bind(host, port);
@@ -205,13 +237,18 @@ public:
         if (epoll.getEventFd(i) == listenSocket.getSocket() && (epoll.getEvents(i) & EPOLLIN)) {
           socket_t clientSocketFd = accept(listenSocket.getSocket(), nullptr, nullptr);
           {
-          std::unique_lock<std::mutex> temp(tempMutex);
+          std::unique_lock<std::mutex> temp(clientSocketsMutex);
           clientSockets[clientSocketFd] = std::make_unique<Socket>(clientSocketFd);
           }
           if (clientSocketFd < 0) {
             continue;
           }
           epoll.addEvent(clientSocketFd);
+        } else if ((epoll.getEvents(i) & EPOLLRDHUP) || (epoll.getEvents(i) & EPOLLERR)) {
+          socket_t clientSocketFd = epoll.getEventFd(i);
+          epoll.removeEvent(clientSocketFd);
+          std::unique_lock<std::mutex> clientSocketsLock(clientSocketsMutex);
+          clientSockets.erase(clientSocketFd);
         } else if (epoll.getEvents(i) & EPOLLIN) {
           socket_t clientSocketFd = epoll.getEventFd(i);
           epoll.removeEvent(clientSocketFd);
@@ -233,7 +270,7 @@ public:
   Handlers optionsHandlers;
   BaseDirs baseDirs;
 
-  std::mutex tempMutex;
+  std::mutex clientSocketsMutex;
   std::unordered_map<socket_t, std::unique_ptr<Socket>> clientSockets;
 
   static inline bool isValidDirectroy(const char* dir) {
@@ -244,6 +281,71 @@ public:
   static inline bool isValidFile(const char* dir) {
     struct stat dirStatus;
     return stat(dir, &dirStatus) >= 0 && S_ISREG(dirStatus.st_mode);
+  }
+
+  static std::string getFileType(std::string& path) {
+    static std::unordered_map<std::string, std::string> totalType = {
+      {"css", "text/css"},
+      {"csv", "text/csv"},
+      {"htm", "text/html"},
+      {"html", "text/html"},
+      {"js", "text/javascript"},
+      {"mjs", "text/javascript"},
+      {"txt", "text/plain"},
+      {"vtt", "text/vtt"},
+
+      {"apng", "image/apng"},
+      {"avif", "image/avif"},
+      {"bmp", "image/bmp"},
+      {"gif", "image/gif"},
+      {"png", "image/png"},
+      {"svg", "image/svg+xml"},
+      {"webp", "image/webp"},
+      {"ico", "image/x-icon"},
+      {"tif", "image/tiff"},
+      {"tiff", "image/tiff"},
+      {"jpg", "image/jpeg"},
+      {"jpeg", "image/jpeg"},
+      {"mp4", "video/mp4"},
+      {"mpeg", "video/mpeg"},
+      {"webm", "video/webm"},
+
+      {"mp3", "audio/mp3"},
+      {"mpga", "audio/mpeg"},
+      {"weba", "audio/webm"},
+      {"wav", "audio/wave"},
+
+      {"otf", "font/otf"},
+      {"ttf", "font/ttf"},
+      {"woff", "font/woff"},
+      {"woff2", "font/woff2"},
+
+      {"7z", "application/x-7z-compressed"},
+      {"atom", "application/atom+xml"},
+      {"pdf", "application/pdf"},
+      {"json", "application/json"},
+      {"rss", "application/rss+xml"},
+      {"tar", "application/x-tar"},
+      {"xht", "application/xhtml+xml"},
+      {"xhtml", "application/xhtml+xml"},
+      {"xslt", "application/xslt+xml"},
+      {"xml", "application/xml"},
+      {"gz", "application/gzip"},
+      {"zip", "application/zip"},
+      {"wasm", "application/wasm"},
+    };
+    static std::string defaultType = "application/octet-stream";
+
+    for (int i = path.size() - 1; i >= 0; --i) {
+      if (path[i] == '.') {
+        std::string ext = path.substr(i + 1);
+        if (totalType.find(ext) == totalType.end()) {
+          return defaultType;
+        }
+        return totalType.find(ext)->second;
+      }
+    }
+    return defaultType;
   }
 
   static inline int hexCharToInt(char c) {
@@ -378,7 +480,12 @@ public:
     }
     std::string key(s + begin, cur - begin);
 
-    begin = ++cur;
+    ++cur;
+    while (cur < len && isblank(s[cur])) {
+      ++cur;
+    }
+    begin = cur;
+
     while (cur < len && s[cur] != '\r' && s[cur] != '\n') {
       ++cur;
     }
@@ -408,38 +515,69 @@ public:
       if (!parseRequestHeader(line.first, line.second, request)) return false;
     }
     line = buffer.readline();
+
+    if (request.isKeyInHeader("Connection")) {
+      std::cerr << request.getHeaderValue("Connection") << std::endl;
+    }
+
+    if ((request.isKeyInHeader("Connection") && request.getHeaderValue("Connection") == "keep-alive") || 
+        (!request.isKeyInHeader("Connection") && request.version == HttpVersion::HTTP1_1)) {
+      request.keepAlive = true;
+    }
     return true;
   }
 
-  static bool writeResponse(Buffer& buffer, const Response& response) {
-    buffer.bufferedWriteFd("%s %s %s\r\n", getHttpVersionString(response.version), response.statusCode.c_str(), response.statusDescription.c_str());
+  static bool writeResponse(Buffer& buffer, Response& response) {
+    // response status line
+    buffer.bufferedWriteFd("%s %d %s\r\n", getHttpVersionString(response.version), response.statusCode, getStatusMessage(response.statusCode));
 
+    // set keep-alive or not
+    if (response.keepAlive) {
+      response.headers["Connection"] = "keep-alive";
+    } else {
+      response.headers["Connection"] = "close";
+    }
+
+    // response header
     for (auto& header : response.headers) {
       buffer.bufferedWriteFd("%s: %s\r\n", header.first.c_str(), header.second.c_str());
     }
     buffer.bufferedWriteFd("\r\n");
+    buffer.flushWrite();
 
-    buffer.bufferedWriteFd("%s", response.body.c_str());
+    //response body
+    if (response.contentProvider) {
+      response.contentProvider(buffer);
+    } else {
+      buffer.bufferedWriteFd("%s", response.body.c_str());
+    }
 
     buffer.flushWrite();
-    // TODO: add more pattern
 
     return true;
   }
 
   static bool routeStaticFiles(Request& request, Response& response, BaseDirs& baseDirs) {
     for (const auto& baseDir : baseDirs) {
-      if (!request.url.compare(0, baseDir.second.length(), baseDir.second)) {
+      if (request.url.compare(0, baseDir.second.length(), baseDir.second) != 0) {
         continue;
       }
-      std::string filePath = baseDir.first + "/" + request.url.substr(baseDir.second.length());
+      std::string filePath = baseDir.first + request.url.substr(baseDir.second.length());
       if (!isValidFile(filePath.c_str())) {
         continue;
       }
-      std::shared_ptr mmap = std::make_shared<Mmap>(filePath);
-      response.contentProvider = [&mmap](Buffer& buffer) -> bool {
-        return buffer.writeFd(mmap->data(), mmap->size());
-      };
+
+      response.statusCode = 200;
+      std::shared_ptr mmap = std::make_shared<Mmap>(filePath.c_str());
+      response.headers.emplace("Content-Length", std::to_string(mmap->size()));
+      response.headers.emplace("Content-Type", getFileType(filePath));
+      if (request.method == RequestMethod::GET) {
+        response.contentProvider = [mmap](Buffer& buffer) -> bool {
+          return buffer.writeFd(mmap->data(), mmap->size());
+        };
+      }
+
+      return true;
     }
     return false;
   }
@@ -463,48 +601,55 @@ public:
         routeStaticFiles(request, response, server.baseDirs)) {
       return true;
     }
+
     switch (request.method) {
     case RequestMethod::GET:
-      return routeHandlers(request, response, server.getHandlers);
     case RequestMethod::HEAD:
-      return routeNotImplement(request, response, server.getHandlers);
+      return routeHandlers(request, response, server.getHandlers);
     case RequestMethod::POST:
       return routeHandlers(request, response, server.postHandlers);
     case RequestMethod::PUT:
       return routeHandlers(request, response, server.putHandlers);
     case RequestMethod::DELETE:
       return routeHandlers(request, response, server.deleteHandlers);
-    case RequestMethod::CONNECT:
-      return routeNotImplement(request, response, server.getHandlers);
     case RequestMethod::OPTIONS:
       return routeHandlers(request, response, server.optionsHandlers);
-    case RequestMethod::TRACE:
-      return routeNotImplement(request, response, server.getHandlers);
     case RequestMethod::PATCH:
       return routeHandlers(request, response, server.patchHandlers);
     }
+
+    response.statusCode = 400;
     return false;
   }
 
   static void processClient(socket_t clientSocketFd, HttpServer& server, Epoll& epoll) {
-    // printf("clientSocket: %d\n", clientSocketFd);
     Buffer buffer(clientSocketFd);
     Request request;
     Response response;
     if (!parseRequest(buffer, request)) {
-      // TODO: add error handler
+      writeResponse(buffer, response);
+      return;
     }
 
+    response.keepAlive = request.keepAlive;
+
     if (!route(request, response, server)) {
-      // TODO: add error handler
+      if (response.statusCode == -1) {
+        response.statusCode = 404;
+      }
+    } else {
+      if (response.statusCode == -1) {
+        response.statusCode = 200;
+      }
     }
 
     writeResponse(buffer, response);
-    epoll.addEvent(clientSocketFd);
-
-    // std::unique_lock<std::mutex> temp(server.tempMutex);
-    // server.clientSockets.erase(clientSocketFd);
-    // shutdown(clientSocketFd, SHUT_RDWR);
+    if (response.keepAlive) {
+      epoll.addEvent(clientSocketFd);
+    } else {
+      std::unique_lock<std::mutex>(server.clientSocketsMutex);
+      server.clientSockets.erase(clientSocketFd);
+    }
   }
 };
 

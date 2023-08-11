@@ -37,7 +37,7 @@ public:
     return true;
   }
 
-  int addEvent(int eventFd, uint32_t events = EPOLLIN | EPOLLET) {
+  int addEvent(int eventFd, uint32_t events = EPOLLIN | EPOLLET | EPOLLRDHUP) {
     epoll_event event;
     event.data.fd = eventFd;
     event.events = events;

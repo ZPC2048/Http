@@ -71,7 +71,6 @@ public:
   
   ~Socket() {
     if (useable) {
-      shutdown(socketFd, SHUT_RDWR);
       close(socketFd);
     }
   }
