@@ -6,8 +6,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <exception>
 #include <string>
+
+#include "Exception.hpp"
 
 namespace Http {
 
@@ -18,7 +19,7 @@ enum class SocketError {
   INVALID_SOCKET
 };
 
-class SocketException : public std::exception {
+class SocketException : public Exception {
 public:
   const SocketError errorCode;
 
@@ -33,13 +34,6 @@ public:
       break;
     }
   }
-
-  virtual const char* what() const noexcept override {
-    return errorMessage.c_str();
-  }
-
-protected:
-  std::string errorMessage;
 };
 
 class Socket {
@@ -49,8 +43,6 @@ private:
   bool useable;
 
 public:
-  // using enum SocketError;
-
   explicit Socket() : socketFd(socket(AF_INET, SOCK_STREAM, 0)), useable(true) {
     if (socketFd < 0) {
       throw SocketException(SocketError::BAD_ALLOC);

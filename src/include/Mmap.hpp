@@ -6,23 +6,50 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <stdexcept>
+#include "Exception.hpp"
+
+namespace Http {
+
+enum class MmapError {
+  OPEN_FILE_FAIL,
+  GET_FILE_INFO_FAIL,
+  MMAP_FAIL
+};
+
+class MmapException : public Exception {
+public:
+  const MmapError errorCode;
+
+  explicit MmapException (MmapError errorCode) :
+    errorCode(errorCode) {
+    switch (errorCode) {
+    case MmapError::OPEN_FILE_FAIL:
+      errorMessage = "Cannot open file! Error code: " + std::to_string(errno);
+      break;
+    case MmapError::GET_FILE_INFO_FAIL:
+      errorMessage = "Cannot get file information! Error code: " + std::to_string(errno);
+      break;
+    case MmapError::MMAP_FAIL:
+      errorMessage = "Cannot mmap file into memory! Error code: " + std::to_string(errno);
+      break;
+    }
+  }
+};
 
 class Mmap {
 public:
   Mmap(const char* path) {
-    // TODO: replace exception
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
-      throw std::runtime_error("open file failed");
+      throw MmapException(MmapError::OPEN_FILE_FAIL);
     }
     struct stat st;
     if (fstat(fd, &st) < 0) {
-      throw std::runtime_error("get file information failed");
+      throw MmapException(MmapError::GET_FILE_INFO_FAIL);
     }
     ptr = (const char*)mmap(nullptr, fileSize = st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (ptr == nullptr) {
-      throw std::runtime_error("mmap file into memory failed");
+      throw MmapException(MmapError::MMAP_FAIL);
     }
   }
 
@@ -48,5 +75,7 @@ private:
   int fileSize;
   const char* ptr = nullptr;
 };
+
+}
 
 #endif
