@@ -22,6 +22,7 @@
 #include "ThreadPool.hpp"
 #include "Buffer.hpp"
 #include "Mmap.hpp"
+#include "Timer.hpp"
 
 #include <iostream>
 
@@ -226,7 +227,18 @@ public:
     epoll.addEvent(listenSocket.getSocket());
 
     while (true) {
-      int eventNumber = epoll.wait(20, -1);
+      socket_t timeOutSocket = timer.getNextTimeOutSocket();
+      while (timeOutSocket != -1) {
+        {
+        std::unique_lock<std::mutex> clientSocketsLock(clientSocketsMutex);
+        clientSockets.erase(timeOutSocket);
+        }
+        timeOutSocket = timer.getNextTimeOutSocket();
+      }
+
+      int nextTriggerTime = timer.getNextTriggerTime();
+
+      int eventNumber = epoll.wait(20, nextTriggerTime <= 0 ? -1 : nextTriggerTime);
       if (eventNumber < 0) {
         return;
       }
@@ -236,21 +248,22 @@ public:
       for (int i = 0; i < eventNumber; ++i) {
         if (epoll.getEventFd(i) == listenSocket.getSocket() && (epoll.getEvents(i) & EPOLLIN)) {
           socket_t clientSocketFd = accept(listenSocket.getSocket(), nullptr, nullptr);
-          {
-          std::unique_lock<std::mutex> temp(clientSocketsMutex);
-          clientSockets[clientSocketFd] = std::make_unique<Socket>(clientSocketFd);
-          }
           if (clientSocketFd < 0) {
             continue;
           }
+          timer.insert(clientSocketFd, DEFAULT_TIME_OUT);
           epoll.addEvent(clientSocketFd);
-        } else if ((epoll.getEvents(i) & EPOLLRDHUP) || (epoll.getEvents(i) & EPOLLERR)) {
+          std::unique_lock<std::mutex> clientSocketsLock(clientSocketsMutex);
+          clientSockets[clientSocketFd] = std::make_unique<Socket>(clientSocketFd);
+        } else if (epoll.getEvents(i) & (EPOLLRDHUP | EPOLLERR)) {
           socket_t clientSocketFd = epoll.getEventFd(i);
+          timer.removeSocket(clientSocketFd);
           epoll.removeEvent(clientSocketFd);
           std::unique_lock<std::mutex> clientSocketsLock(clientSocketsMutex);
           clientSockets.erase(clientSocketFd);
         } else if (epoll.getEvents(i) & EPOLLIN) {
           socket_t clientSocketFd = epoll.getEventFd(i);
+          timer.removeSocket(clientSocketFd);
           epoll.removeEvent(clientSocketFd);
           threadPool.submitTask(processClient, clientSocketFd, std::ref(*this), std::ref(epoll));
         }
@@ -272,6 +285,9 @@ public:
 
   std::mutex clientSocketsMutex;
   std::unordered_map<socket_t, std::unique_ptr<Socket>> clientSockets;
+
+  const int DEFAULT_TIME_OUT = 60000;
+  Timer timer;
 
   static inline bool isValidDirectroy(const char* dir) {
     struct stat dirStatus;
@@ -498,9 +514,6 @@ public:
   static bool parseRequest(Buffer& buffer, Request& request) {
     auto line = buffer.readline();
 
-    // std::string debug(line.first, line.second);
-    // printf("RequestLine: %s\n", debug.c_str());
-
     if (line.first == nullptr) return false;
 
     if (!parseRequestLine(line.first, line.second, request)) return false;
@@ -510,8 +523,6 @@ public:
       if (line.second == 2 && *line.first == '\r' && *(line.first + 1) == '\n') {
         break;
       }
-      // std::string debug(line.first, line.second);
-      // printf("RequestHeader: %s\n", debug.c_str());
       if (!parseRequestHeader(line.first, line.second, request)) return false;
     }
     line = buffer.readline();
@@ -645,10 +656,14 @@ public:
 
     writeResponse(buffer, response);
     if (response.keepAlive) {
+      server.timer.insert(clientSocketFd, server.DEFAULT_TIME_OUT);
       epoll.addEvent(clientSocketFd);
     } else {
+      {
       std::unique_lock<std::mutex>(server.clientSocketsMutex);
       server.clientSockets.erase(clientSocketFd);
+      }
+      server.timer.removeSocket(clientSocketFd);
     }
   }
 };
